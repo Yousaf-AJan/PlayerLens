@@ -1,0 +1,22 @@
+# Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local planning and learning notes
+.local/
+
+# Data, models, and generated results
+data/raw/
+data/processed/
+artifacts/
+models/
+.cache/
+
+# Credentials
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+kaggle.json
