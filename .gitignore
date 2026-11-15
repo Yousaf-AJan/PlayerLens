@@ -3,16 +3,27 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
 # Local planning and learning notes
 .local/
 
 # Data, models, and generated results
-data/raw/
-data/processed/
+data/
 artifacts/
 models/
 .cache/
+caches/
+embeddings/
+logs/
+*.log
 
 # Credentials
 .env
@@ -20,3 +31,9 @@ models/
 !.env.example
 .streamlit/secrets.toml
 kaggle.json
+.credentials/
+.secrets/
+.aws/
+credentials*.json
+*.pem
+*.key
