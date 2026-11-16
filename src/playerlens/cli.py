@@ -13,12 +13,15 @@ from playerlens.validation import DatasetValidationError, validate_csv, write_is
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate local Steam review data.")
+    parser = argparse.ArgumentParser(description="Validate and explore local Steam review data.")
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("validate", help="Check the full input; write local summary and issues.")
     validate.add_argument("--input", type=Path, default=Path("data/raw/elden_ring_steam_reviews.csv"))
     validate.add_argument("--output", type=Path, default=Path("artifacts/validation"))
+    eda = commands.add_parser("eda", help="Write descriptive tables, figures and a local EDA report.")
+    eda.add_argument("--input", type=Path, default=Path("data/raw/elden_ring_steam_reviews.csv"))
+    eda.add_argument("--output", type=Path, default=Path("artifacts/eda"))
     args = parser.parse_args(argv)
     started = datetime.now(timezone.utc).isoformat()
     try:
@@ -26,6 +29,23 @@ def main(argv: list[str] | None = None) -> int:
         output = args.output.resolve()
         if output == source.parent or source.parent in output.parents:
             raise DatasetValidationError("Output must be outside the input directory to protect source data.")
+        if args.command == "eda":
+            from time import perf_counter
+            from playerlens.eda import build_eda
+            from playerlens.eda_report import write_eda_report
+
+            clock = perf_counter()
+            try:
+                result = validate_csv(source)
+                analysis = build_eda(result)
+                write_eda_report(analysis, output, source, started)
+            except ValueError as exc:
+                print(f"EDA failed: {exc}", file=sys.stderr)
+                return 2
+            print(f"EDA: {analysis.summary['rows']:,} reviews; {analysis.summary['validation']['status']}")
+            print(f"Elapsed: {perf_counter() - clock:.3f}s; reports: {output}")
+            print("Aspect usefulness is not estimated; development examples are qualitative only.")
+            return 1 if result.summary["validation"]["error_count"] else 0
         result = validate_csv(source)
         output.mkdir(parents=True, exist_ok=True)
         (output / "summary.json").write_text(
@@ -46,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         (output / "run.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except (OSError, DatasetValidationError) as exc:
-        print(f"Validation failed: {exc}", file=sys.stderr)
+        action = "EDA" if args.command == "eda" else "Validation"
+        print(f"{action} failed: {exc}", file=sys.stderr)
         return 2
     text = result.summary["text"]
     checks = result.summary["validation"]
