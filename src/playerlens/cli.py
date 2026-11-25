@@ -22,7 +22,57 @@ def main(argv: list[str] | None = None) -> int:
     eda = commands.add_parser("eda", help="Write descriptive tables, figures and a local EDA report.")
     eda.add_argument("--input", type=Path, default=Path("data/raw/elden_ring_steam_reviews.csv"))
     eda.add_argument("--output", type=Path, default=Path("artifacts/eda"))
+    prepare = commands.add_parser('prepare', help='Prepare source-linked passages and a grouped annotation sample.')
+    prepare.add_argument('--input',type=Path,default=Path('data/raw/elden_ring_steam_reviews.csv'))
+    prepare.add_argument('--output',type=Path,default=Path('data/processed/m3-ready'))
+    prepare.add_argument('--exclusions',type=Path,default=Path('data/annotations/development_exclusions.json'))
+    annotate = commands.add_parser('annotate',help='Open the local pilot-only annotation form.')
+    annotate.add_argument('--prepared',type=Path,default=Path('data/processed/m3-ready'))
+    annotate.add_argument('--annotations',type=Path,default=Path('data/annotations/m3'))
+    annotate.add_argument('--split',choices=['development','test'],default='development')
+    annotate.add_argument('--mode',choices=['assisted','manual','reference'],default='assisted')
+    annotate.add_argument('--proposals',type=Path,default=Path('data/proposals/m3-assisted-v1'))
+    annotate.add_argument('--decisions',type=Path,default=Path('data/annotations/m3-assisted-v1'))
+    propose = commands.add_parser('propose',help='Write immutable rules-first development proposals, not reference labels.')
+    propose.add_argument('--prepared',type=Path,default=Path('data/processed/m3-ready'))
+    propose.add_argument('--output',type=Path,default=Path('data/proposals/m3-assisted-v1'))
+    propose.add_argument('--cohort',choices=['pilot','development'],default='pilot')
+    freeze = commands.add_parser('freeze-annotations',help='Reserved for explicit post-pilot approval; currently locked.')
     args = parser.parse_args(argv)
+    if args.command == 'freeze-annotations':
+        print('Taxonomy remains provisional. Post-pilot review and explicit freeze approval are required.',file=sys.stderr)
+        return 2
+    if args.command in ('prepare','annotate','propose'):
+        try:
+            if args.command == 'propose':
+                from playerlens.proposal_store import generate_proposals
+                print(json.dumps(generate_proposals(args.prepared,args.output,args.cohort),sort_keys=True))
+                return 0
+            if args.command == 'prepare':
+                from playerlens.preparation_report import prepare_run
+                summary = prepare_run(args.input,args.output,args.exclusions)
+                print(json.dumps(summary,sort_keys=True))
+                return 0
+            if args.split == 'test':
+                raise ValueError('Held-out annotation is locked until post-pilot approval')
+            if args.mode == 'reference':
+                raise ValueError('Independent reference annotation is locked until pilot/guideline readiness approval')
+            from playerlens.preparation_report import load_prepared
+            load_prepared(args.prepared)
+            import subprocess
+            if args.mode == 'assisted':
+                from playerlens.proposal_store import load_proposals
+                run,tables = load_prepared(args.prepared)
+                load_proposals(args.proposals,run,tables['sampling_manifest'])
+                return subprocess.call([sys.executable,'-B','-m','streamlit','run',str(Path(__file__).with_name('assisted_app.py')),
+                    '--server.address=127.0.0.1','--server.headless=true','--browser.gatherUsageStats=false','--',
+                    '--prepared',str(args.prepared.resolve()),'--proposals',str(args.proposals.resolve()),'--decisions',str(args.decisions.resolve())])
+            return subprocess.call([sys.executable,'-B','-m','streamlit','run',str(Path(__file__).with_name('annotation_app.py')),
+                '--server.address=127.0.0.1','--server.headless=true','--browser.gatherUsageStats=false','--',
+                '--prepared',str(args.prepared.resolve()),'--annotations',str(args.annotations.resolve())])
+        except (OSError,ValueError) as exc:
+            print(f'{args.command} failed: {exc}',file=sys.stderr)
+            return 2
     started = datetime.now(timezone.utc).isoformat()
     try:
         source = args.input.resolve()
